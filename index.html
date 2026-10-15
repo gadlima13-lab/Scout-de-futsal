@@ -43,7 +43,8 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .sync[data-s="saving"]::before{background:var(--warn)}
 .sync[data-s="error"]::before,.sync[data-s="readonly"]::before{background:var(--bad)}
 
-.gamebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.gamebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--bg);padding-block:6px}
+.btn.back{background:var(--board);color:var(--board-ink);border-color:var(--board);order:-1}
 .gtitle{display:flex;flex-direction:column;min-width:0;flex:1 1 200px}
 .gtitle b{font:700 20px/1.1 var(--f-num);text-transform:uppercase;letter-spacing:.02em}
 .gtitle span{font-size:13px;color:var(--muted)}
@@ -215,6 +216,20 @@ select,input[type=text],input[type=number],input[type=date]{font:inherit;font-si
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 
+/* minutagem (planilha do preparador físico) */
+.mt table{font-size:13px}
+.mt th,.mt td{text-align:center;border:1px solid var(--line);padding:5px 7px;font-weight:700}
+.mt td:first-child,.mt th:first-child{text-align:left;min-width:120px}
+.mt .ttl{background:var(--token);color:#fff;font:700 16px var(--f-num);text-transform:uppercase;letter-spacing:.06em;text-align:center}
+.mt th{font-size:12px;color:var(--ink)}
+.mt th.e{color:var(--token)}
+.mt td.blank{background:var(--chip)}
+.mt td.tot{background:var(--surface)}
+.mt th.geral,.mt td.geral{background:var(--token);color:#fff}
+.mt tr.zero td{color:var(--muted)}
+.mtfoot{background:var(--token);color:#fff;font:700 15px var(--f-num);text-transform:uppercase;letter-spacing:.06em;text-align:center;border-radius:8px;padding:8px}
+.staff{display:flex;flex-wrap:wrap;gap:8px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.staff label{flex:1 1 220px}
 .toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;z-index:70;max-width:calc(100% - 32px);box-shadow:0 6px 18px rgba(0,0,0,.3)}
 @media (prefers-reduced-motion:reduce){.tok{transition:none}}
 @media (max-width:520px){.btok{width:58px}.clock{font-size:30px}.prow{grid-template-columns:auto 1fr auto}.prow .fc{display:none}.log li{grid-template-columns:64px 1fr auto}}
@@ -327,6 +342,36 @@ function hrMetrics(g,pid){
     rec:rec.length?Math.round(rec.reduce((a,b)=>a+b,0)/rec.length):null,dataMin:Math.round(all.length*BIN/60)};
 }
 
+/* Minutagem: entradas e saídas por tempo no relógio regressivo (20:00 → 0:00), como na planilha do preparador físico */
+const fmtC=s=>{ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+function minutagem(g){
+  const t=gnow(g);
+  const players=g.players.slice().sort((a,b)=>((a.pos==='GOL'?0:1)-(b.pos==='GOL'?0:1))||a.num-b.num);
+  const halves=[1,2].map(h=>{
+    const P=(h-1)*PERIOD, E=P+PERIOD;
+    const rows=players.map(p=>{
+      const pairs=[]; let tot=0;
+      (g.stints[p.id]||[]).forEach(([i,o])=>{
+        const ent=Math.max(i,P);
+        if(ent>=E||ent>t) return;
+        if(o!==null&&o<=P) return;
+        const end=Math.min(o===null?t:o,E);
+        tot+=Math.max(0,end-ent);
+        pairs.push([E-ent,(o!==null&&o<E)?E-o:null]);
+      });
+      return {p,pairs,tot};
+    });
+    return {h,rows,maxPairs:Math.max(0,...rows.map(r=>r.pairs.length))};
+  });
+  const geral={}; players.forEach((p,k)=>geral[p.id]=halves[0].rows[k].tot+halves[1].rows[k].tot);
+  return {players,halves,geral,pairs:Math.max(8,halves[0].maxPairs,halves[1].maxPairs)};
+}
+/* Elenco do Campo Mourão (goleiros primeiro, como na planilha de minutagem) */
+const ROSTER_CM=[[2,'Françoar','GOL'],[23,'Canton','GOL'],[34,'Léo','GOL'],[3,'Gui Lima'],[6,'Selbach'],[10,'Jabá'],[11,'Luan'],[15,'Renan'],[16,'Kaue'],[18,'Tom'],[30,'Samuel'],[33,'Kaduzin'],[77,'Jhony'],[78,'Pebinha']];
+function realClub(prev){
+  return {name:'Campo Mourão',example:false,preparador:(prev&&prev.preparador!==undefined)?prev.preparador:'Rafael Fontanella',updatedAt:Date.now(),
+    players:ROSTER_CM.map(([n,name,pos])=>({id:'cm'+String(n).padStart(2,'0'),num:n,name,pos:pos||'ALA',fcmax:195,active:true}))};
+}
 function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function sampleClub(){
   const P=(n,name,pos,fc)=>({id:'p'+n,num:n,name,pos,fcmax:fc,active:true});
@@ -682,6 +727,8 @@ function viewRoster(){
     <span class="m"><b>${esc(p.name)}</b><span>${p.pos}${p.active?'':' · fora do elenco ativo'}</span></span>
     <span class="fc pct">FC máx ${p.fcmax||'–'}</span>
     <button class="btn small" data-act="edit-player" data-id="${p.id}">Editar</button></div>`).join('')}</div>`;
+  h+=`<div class="section-h"><h2>Comissão técnica</h2><span>aparece no rodapé da minutagem</span></div>
+  <div class="staff"><label class="f">Preparador físico<input type="text" id="staff-prep" value="${esc(preparador())}" placeholder="Nome do preparador físico"></label><button class="btn" data-act="save-staff">Salvar</button></div>`;
   h+=`<p class="foot">FC máx é a frequência cardíaca máxima do atleta, usada para calcular as zonas do Polar. Se não souber, use o valor do último teste ou deixe 195.</p>`;
   return h;
 }
@@ -722,27 +769,28 @@ function viewGame(g){
   const t=gnow(g), P=id=>g.players.find(p=>p.id===id);
   const p=g.period, fus=countType(g,'falta_c',p), fadv=countType(g,'falta_adv',p);
   const ttUs=countType(g,'tt_us',p), ttAdv=countType(g,'tt_adv',p);
-  const tabs=[['quadra','Quadra'],['stats','Estatísticas'],['mapa','Mapa de calor'],['lances','Lances'],['fisico','Físico']];
-  let h=`<header class="gamebar"><button class="btn ghost" data-act="go" data-v="home">← Jogos</button>
+  const tabs=[['quadra','Quadra'],['stats','Estatísticas'],['minutagem','Minutagem'],['mapa','Mapa de calor'],['lances','Lances'],['fisico','Físico']];
+  let h=`<header class="gamebar"><button class="btn back" data-act="go" data-v="home">← Jogos</button>
     <div class="gtitle"><b>${esc(clubName())} × ${esc(g.opp)}</b><span>${fmtDate(g.date)} · ${esc(g.comp||'Sem competição')} · ${g.venue}</span></div>
     <span class="sync" id="sync" data-s="${SY.state}">${syncLabel()}</span></header>`;
   if(g.example) h+=`<div class="note"><p>Jogo de exemplo, com lances e frequência cardíaca simulados para você ver o app funcionando. Pode apagar quando quiser.</p><button class="btn danger" data-act="del-game">Apagar exemplo</button></div>`;
-  if(g.status==='final') h+=`<div class="note"><p>Jogo encerrado. Você ainda pode corrigir lances.</p><button class="btn" data-act="reopen">Reabrir jogo</button></div>`;
+  if(g.status==='final') h+=`<div class="note"><p><b>Jogo encerrado.</b> Confira as estatísticas e a minutagem abaixo. Você ainda pode corrigir lances.</p><button class="btn primary" data-act="go" data-v="home">Voltar para Jogos</button><button class="btn" data-act="new-game">Novo jogo</button><button class="btn" data-act="reopen">Reabrir jogo</button></div>`;
   h+=`<div class="board">
     <div class="team"><b>${esc(clubName())}</b><span class="chip${fus>=5?' warn':''}" id="foulsUs">Faltas ${fus}</span><span class="tt">TT <i class="${ttUs?'used':''}"></i></span></div>
     <div class="score"><span>${g.score.us}</span><span class="x">×</span><span>${g.score.them}</span></div>
     <div class="team r"><b class="opp">${esc(g.opp)}</b><span class="chip${fadv>=5?' warn':''}">Faltas ${fadv}</span><span class="tt">TT <i class="${ttAdv?'used':''}"></i></span></div>
     <div class="clockrow"><span class="chip" id="period"></span><span class="clock" id="clock"></span>${fus>=5?'<span class="chip warn">Próxima falta nossa: tiro livre sem barreira</span>':''}${fadv>=5?'<span class="chip warn">Próxima falta deles: tiro livre sem barreira</span>':''}</div>
   </div>
-  <div class="row"><button class="btn primary" id="playBtn" data-act="play"></button>
+  <div class="row">${g.status==='final'?'':`<button class="btn primary" id="playBtn" data-act="play"></button>
     <button class="btn" data-act="oppgoal">Gol adversário</button><button class="btn" data-act="oppfoul">Falta adversário</button>
-    <button class="btn" data-act="tt" data-v="tt_us">Tempo técnico</button><button class="btn" data-act="tt" data-v="tt_adv">Tempo adv.</button>
+    <button class="btn" data-act="tt" data-v="tt_us">Tempo técnico</button><button class="btn" data-act="tt" data-v="tt_adv">Tempo adv.</button>`}
     <button class="btn" data-act="undo" ${(undoStacks[g.id]||[]).length?'':'disabled'}>Desfazer</button>
     <span class="spacer"></span>${g.status!=='final'?'<button class="btn" data-act="end-game">Encerrar jogo</button>':''}<button class="btn danger" data-act="del-game">Apagar</button></div>`;
   h+=confirmBox('end-game','Encerrar o jogo? O cronômetro para e os minutos de cada atleta ficam fechados.','Encerrar');
   h+=confirmBox('del-game','Apagar este jogo e todos os lances dele? Isso não tem volta.','Apagar jogo');
   h+=`<div class="tabs" role="tablist">${tabs.map(([v,l])=>`<button class="tab" role="tab" data-act="tab" data-v="${v}" aria-selected="${UI.tab===v}">${l}</button>`).join('')}</div>`;
   if(UI.tab==='stats') h+=tabStats(g,t);
+  else if(UI.tab==='minutagem') h+=tabMinutagem(g);
   else if(UI.tab==='mapa') h+=tabMapa(g);
   else if(UI.tab==='lances') h+=tabLances(g);
   else if(UI.tab==='fisico') h+=tabFisico(g,t);
@@ -785,7 +833,7 @@ function tabStats(g,t){
   const st=computeStats(g,t), rows=g.players.slice().sort((a,b)=>st[b.id].min-st[a.id].min||a.num-b.num);
   const tot=Object.assign(sumTot(st,rows.map(p=>p.id)),{us:g.score.us,them:g.score.them});
   return statsTable(rows,st,tot,false)+`<p class="foot">Min = tempo em quadra pelo cronômetro do jogo (pausas não contam). Part. = gols + assistências. GF e GS = gols feitos e sofridos com o atleta em quadra; para o goleiro, GS são os gols que ele sofreu. Final. = no alvo / total.</p>
-  <div class="row"><button class="btn" data-act="exp-csv">Planilha de estatísticas (CSV)</button><button class="btn" data-act="exp-pdf">Súmula (PDF)</button><button class="btn" data-act="exp-log">Lances (CSV)</button></div>`;
+  <div class="row"><button class="btn" data-act="exp-min">Minutagem (Excel)</button><button class="btn" data-act="exp-csv">Planilha de estatísticas (CSV)</button><button class="btn" data-act="exp-pdf">Súmula (PDF)</button><button class="btn" data-act="exp-log">Lances (CSV)</button></div>`;
 }
 function mapFilters(prefix,players){
   const pv=UI[prefix+'Player'], av=UI[prefix+'Action'];
@@ -853,6 +901,64 @@ function viewSeason(){
   return h;
 }
 
+/* ---------- minutagem ---------- */
+const preparador=()=>(S.club&&S.club.preparador!==undefined)?S.club.preparador:'Rafael Fontanella';
+const athleteLabel=p=>String(p.num).padStart(2,'0')+' '+String(p.name).toUpperCase();
+function tabMinutagem(g){
+  const M=minutagem(g), N=M.pairs;
+  const head=(h)=>`<tr><th>ATLETA</th>${Array.from({length:N},()=>'<th class="e">ENT.</th><th class="e">SAÍDA</th>').join('')}<th>${h===2?'TOTAIS':'TOTAL'}</th>${h===2?'<th class="geral">TOTAL GERAL</th>':''}</tr>`;
+  const table=H=>{
+    const cols=1+N*2+1+(H.h===2?1:0);
+    return `<div class="tablewrap mt"><table><thead><tr><th class="ttl" colspan="${cols}">Minutagem – ${H.h}º Tempo</th></tr>${head(H.h)}</thead><tbody>${H.rows.map(r=>{
+      let cells=''; for(let k=0;k<N;k++){ const pr=r.pairs[k]; cells+=pr?`<td>${fmtC(pr[0])}</td>${pr[1]!==null?`<td>${fmtC(pr[1])}</td>`:'<td class="blank"></td>'}`:'<td class="blank"></td><td class="blank"></td>'; }
+      return `<tr class="${r.tot?'':'zero'}"><td>${esc(athleteLabel(r.p))}</td>${cells}<td class="tot">${fmtC(r.tot)}</td>${H.h===2?`<td class="geral">${fmtC(M.geral[r.p.id])}</td>`:''}</tr>`;
+    }).join('')}</tbody></table></div>`;
+  };
+  return table(M.halves[0])+table(M.halves[1])+(preparador()?`<div class="mtfoot">Preparador físico – ${esc(preparador())}</div>`:'')+
+  `<p class="foot">Gerada automaticamente pelas substituições registradas na quadra. Os tempos seguem o relógio regressivo de cada período (20:00 até 0:00). Para corrigir uma entrada ou saída, use Desfazer na hora ou ajuste a substituição. O nome do preparador se altera em Elenco.</p>
+  <div class="row"><button class="btn primary" data-act="exp-min">Baixar minutagem (Excel)</button></div>`;
+}
+async function exportMinutagem(g){
+  toast('Gerando planilha…');
+  try{ await loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'); }
+  catch(e){ toast('Não foi possível carregar o gerador de Excel. Tente de novo com internet.'); return; }
+  const M=minutagem(g), N=M.pairs, wb=new window.ExcelJS.Workbook(), ws=wb.addWorksheet('Minutagem',{views:[{showGridLines:false}]});
+  const last=1+N*2+2, DAY=86400;
+  ws.getColumn(1).width=20; for(let c=2;c<=1+N*2;c++) ws.getColumn(c).width=8; ws.getColumn(2+N*2).width=9; ws.getColumn(last).width=12;
+  const thin={style:'thin',color:{argb:'FF000000'}}, med={style:'medium',color:{argb:'FF000000'}};
+  const box={top:thin,left:thin,bottom:thin,right:thin};
+  const fill=c=>({type:'pattern',pattern:'solid',fgColor:{argb:c}});
+  let r=1;
+  const info=ws.getRow(r++); info.getCell(1).value=`${clubName()} ${g.score.us} x ${g.score.them} ${g.opp}  ·  ${fmtDate(g.date)}${g.comp?'  ·  '+g.comp:''}`; info.getCell(1).font={bold:true,size:12};
+  r++;
+  M.halves.forEach(H=>{
+    const cols=1+N*2+1+(H.h===2?1:0);
+    ws.mergeCells(r,1,r,cols); const tc=ws.getCell(r,1);
+    tc.value=`Minutagem - ${H.h}º Tempo`; tc.fill=fill('FFFF7F7F'); tc.font={bold:true,size:12}; tc.alignment={horizontal:'center'}; tc.border={top:med,left:med,bottom:med,right:med}; r++;
+    const hr=ws.getRow(r++);
+    hr.getCell(1).value='ATLETA';
+    for(let k=0;k<N;k++){ hr.getCell(2+k*2).value='ENT.'; hr.getCell(3+k*2).value='SAÍDA'; }
+    hr.getCell(2+N*2).value=H.h===2?'TOTAIS':'TOTAL'; if(H.h===2) hr.getCell(last).value='TOTAL GERAL';
+    for(let c=1;c<=cols;c++){ const cell=hr.getCell(c); cell.border=box; cell.alignment={horizontal:'center',vertical:'middle',wrapText:true}; cell.font={bold:true,size:9,color:{argb:(c>1&&c<2+N*2)?'FFFF0000':'FF000000'}}; }
+    if(H.h===2){ const gh=hr.getCell(last); gh.fill=fill('FFFF0000'); gh.font={bold:true,size:9,color:{argb:'FF000000'}}; }
+    H.rows.forEach(row=>{
+      const xr=ws.getRow(r++);
+      xr.getCell(1).value=athleteLabel(row.p);
+      for(let k=0;k<N;k++){ const pr=row.pairs[k];
+        [0,1].forEach(j=>{ const cell=xr.getCell(2+k*2+j), v=pr?pr[j]:null;
+          if(v!==null&&v!==undefined){ cell.value=v/DAY; cell.numFmt='m:ss'; } else if(j===1||!pr) cell.fill=fill('FFD9D9D9'); }); }
+      const tcell=xr.getCell(2+N*2); tcell.value=row.tot/DAY; tcell.numFmt='[m]:ss';
+      if(H.h===2){ const gc=xr.getCell(last); gc.value=M.geral[row.p.id]/DAY; gc.numFmt='[m]:ss'; gc.fill=fill('FFFF0000'); }
+      for(let c=1;c<=cols;c++){ const cell=xr.getCell(c); cell.border=box; cell.font={bold:true,size:10}; cell.alignment={horizontal:c===1?'left':'center'}; }
+    });
+    r++;
+  });
+  if(preparador()){ ws.mergeCells(r,1,r,last); const fc=ws.getCell(r,1); fc.value=`PREPARADOR FÍSICO - ${preparador().toUpperCase()}`; fc.fill=fill('FFFF0000'); fc.font={bold:true,size:12}; fc.alignment={horizontal:'center'}; fc.border={top:med,left:med,bottom:med,right:med}; }
+  ws.pageSetup={orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:1};
+  const buf=await wb.xlsx.writeBuffer();
+  saveFile(gameFile(g)+'-minutagem.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+}
+
 /* ---------- heat map ---------- */
 const GROUP={all:null,chutes:['chute_gol','chute_fora','gol'],passe_ok:['passe_ok'],passe_err:['passe_err'],desarme:['desarme'],faltas:['falta_c','falta_s'],defesa:['defesa']};
 function drawMap(events,pid,act){
@@ -887,7 +993,9 @@ function afterRender(){
 
 /* ---------- render ---------- */
 const root=$('#root');
+function resetInteractions(){ if(drag){ drag.ghost&&drag.ghost.remove(); drag=null; } if(menuCtx){ $('#menu').hidden=true; menuCtx=null; } }
 function render(){
+  if(drag&&(!document.body.contains(drag.el)||Date.now()-drag.t0>15000)){ drag.ghost&&drag.ghost.remove(); drag=null; }
   if(drag||menuCtx){ needRender=true; return; }
   needRender=false;
   const g=cur();
@@ -900,7 +1008,7 @@ function render(){
 function softRender(){ const a=document.activeElement; if(a&&/INPUT|SELECT|TEXTAREA/.test(a.tagName)&&root.contains(a)){ needRender=true; return; } render(); }
 function renderClock(g){
   const t=gnow(g), end=g.period*PERIOD, el=$('#clock'); if(!el) return;
-  el.textContent=fmt(end-t);
+  el.textContent=g.status==='final'?'FIM':fmt(end-t);
   const over=g.clock.elapsed>=2*PERIOD&&!g.clock.since, half=!g.clock.since&&g.clock.elapsed>=PERIOD&&g.period===1;
   $('#period').textContent=over||g.status==='final'?'Fim de jogo':half?'Intervalo':`${g.period}º tempo`;
   const b=$('#playBtn');
@@ -944,11 +1052,12 @@ document.addEventListener('pointerdown',e=>{
   if(menuCtx&&!e.target.closest('#menu')) closeMenu();
   const el=e.target.closest('#tokens .tok[data-slot], .btok:not(:disabled)'); if(!el||!cur()) return;
   e.preventDefault();
-  drag={el,kind:el.classList.contains('btok')?'bench':'court',sx:e.clientX,sy:e.clientY,moved:false,ghost:null,target:null};
+  drag={el,kind:el.classList.contains('btok')?'bench':'court',sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,t0:Date.now(),moved:false,ghost:null,target:null};
   try{ el.setPointerCapture(e.pointerId); }catch(_){}
 });
 document.addEventListener('pointermove',e=>{
   if(!drag) return;
+  drag.lx=e.clientX; drag.ly=e.clientY; drag.t0=Date.now();
   if(!drag.moved&&Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<7) return;
   const g=cur();
   if(!drag.moved){ drag.moved=true;
@@ -978,12 +1087,17 @@ function endDrag(e,cancel){
 }
 document.addEventListener('pointerup',e=>endDrag(e,false));
 document.addEventListener('pointercancel',e=>endDrag(e,true));
+/* iPad: se o toque terminar sem pointerup, encerra o arraste mesmo assim */
+function touchEnd(){ const d=drag; if(!d) return; setTimeout(()=>{ if(drag===d) endDrag({clientX:d.lx,clientY:d.ly},false); },80); }
+document.addEventListener('touchend',touchEnd); document.addEventListener('touchcancel',()=>{ const d=drag; setTimeout(()=>{ if(d&&drag===d) endDrag(null,true); },80); });
+addEventListener('blur',()=>{ if(drag) endDrag(null,true); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden&&drag) endDrag(null,true); });
 
 /* ---------- actions ---------- */
 const ACT={
-  go:d=>{ UI.view=d.v; UI.confirm=null; UI.edit=null; render(); scrollTo(0,0); },
-  'open-game':d=>{ UI.view='game'; UI.gameId=d.id; UI.confirm=null; if(!['quadra','stats','mapa','lances','fisico'].includes(UI.tab)) UI.tab='quadra'; render(); scrollTo(0,0); },
-  'new-game':()=>{ ensureClub(); UI.setup={opp:'',comp:'',date:todayISO(),venue:'Casa',squad:S.club.players.filter(p=>p.active).sort(sortP).slice(0,14).map(p=>p.id),starters:[]}; UI.view='setup'; render(); },
+  go:d=>{ resetInteractions(); UI.view=d.v; UI.confirm=null; UI.edit=null; render(); scrollTo(0,0); },
+  'open-game':d=>{ resetInteractions(); UI.view='game'; UI.gameId=d.id; UI.confirm=null; if(!['quadra','stats','minutagem','mapa','lances','fisico'].includes(UI.tab)) UI.tab='quadra'; render(); scrollTo(0,0); },
+  'new-game':()=>{ resetInteractions(); ensureClub(); UI.setup={opp:'',comp:'',date:todayISO(),venue:'Casa',squad:S.club.players.filter(p=>p.active).sort(sortP).slice(0,14).map(p=>p.id),starters:[]}; UI.view='setup'; render(); },
   venue:d=>{ UI.setup.venue=d.v; render(); },
   sq:d=>{ const s=UI.setup; if(s.squad.includes(d.id)){ s.squad=s.squad.filter(x=>x!==d.id); s.starters=s.starters.filter(x=>x!==d.id); } else s.squad.push(d.id); render(); },
   st:d=>{ const s=UI.setup; if(s.starters.includes(d.id)) s.starters=s.starters.filter(x=>x!==d.id); else if(s.starters.length<5) s.starters.push(d.id); else toast('Já são 5 titulares. Tire um antes.'); render(); },
@@ -1005,7 +1119,7 @@ const ACT={
   'confirm-yes':()=>{ const c=UI.confirm; UI.confirm=null; const g=cur();
     if(c.kind==='del-player'){ S.club.players=S.club.players.filter(p=>p.id!==c.id); UI.edit=null; touchClub(); }
     else if(c.kind==='clear-example'){ S.club.players=S.club.players.filter(p=>!/^p\d+$/.test(p.id)); S.club.example=false; touchClub(); }
-    else if(c.kind==='end-game'&&g){ mutate(g,()=>{ stopClock(g); const t=gnow(g); lineup(g).forEach(id=>closeStint(g,id,t)); g.status='final'; },{undo:false}); toast('Jogo encerrado'); return; }
+    else if(c.kind==='end-game'&&g){ mutate(g,()=>{ stopClock(g); const t=gnow(g); lineup(g).forEach(id=>closeStint(g,id,t)); g.status='final'; UI.tab='stats'; },{undo:false}); scrollTo(0,0); toast('Jogo encerrado'); return; }
     else if(c.kind==='del-game'&&g){ delete S.games[g.id]; saveLocal(); if(SY.db&&!SY.readonly){ SY.pending.add('jogos/'+g.id); SY.ver['jogos/'+g.id]=(SY.ver['jogos/'+g.id]||0)+1; flush('jogos/'+g.id); } UI.view='home'; toast('Jogo apagado'); }
     render(); },
   play:()=>{ const g=cur(); if(!g) return;
@@ -1024,6 +1138,8 @@ const ACT={
   mapview:d=>{ UI.mapView=d.v; render(); },
   delev:d=>{ const g=cur(); const id=+d.id; const e=g.events.find(x=>x.id===id); if(!e) return;
     mutate(g,()=>{ if(e.type==='gol') g.score.us=Math.max(0,g.score.us-1); if(e.type==='gol_adv') g.score.them=Math.max(0,g.score.them-1); g.events=g.events.filter(x=>x.id!==id); }); toast('Lance apagado'); },
+  'exp-min':()=>exportMinutagem(cur()),
+  'save-staff':()=>{ ensureClub(); const v=($('#staff-prep')||{}).value; S.club.preparador=String(v??'').trim(); touchClub(); render(); toast('Comissão técnica salva'); },
   'exp-csv':()=>exportStats(cur()), 'exp-log':()=>exportLog(cur()), 'exp-pdf':()=>exportPDF(cur()),
   'exp-season':()=>{ const {st,players}=seasonData(); const head=['Nº','Atleta','Posição','Jogos','Minutos','Gols','Assistências','Participações','GF em quadra','GS em quadra','Saldo','Finalizações','No alvo','Passes certos','Passes errados','Desarmes','Faltas cometidas','Faltas sofridas','Defesas','Amarelos','Vermelhos'];
     saveFile(`${slug(clubName())}-temporada.csv`,csv([head,...players.sort((a,b)=>a.num-b.num).map(p=>{ const s=st[p.id]; return [p.num,p.name,p.pos,s.j,fmt(s.min),s.gol,s.ast,s.gol+s.ast,s.gf,s.gs,s.gf-s.gs,s.fin,s.alvo,s.pok,s.perr,s.des,s.fc,s.fs,s.def,s.ama,s.ver]; })])); },
@@ -1067,7 +1183,8 @@ function tick(){
 
 /* ---------- boot ---------- */
 loadLocal();
-if(!S.club&&!Object.keys(S.games).length&&!(window.claude&&window.claude.use)){ S.club=sampleClub(); const g=sampleGame(S.club); S.games[g.id]=g; saveLocal(); }
+if(!S.club&&!Object.keys(S.games).length&&!(window.claude&&window.claude.use)){ const g=sampleGame(sampleClub()); S.games[g.id]=g; S.club=realClub(); saveLocal(); }
+else if(S.club&&S.club.example){ S.club=realClub(S.club); saveLocal(); }
 render();
 setInterval(tick,250);
 initSync();
