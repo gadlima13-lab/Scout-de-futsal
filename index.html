@@ -73,7 +73,12 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .score{font:700 clamp(32px,8vw,46px)/1 var(--f-num);font-variant-numeric:tabular-nums;display:flex;gap:10px;align-items:center;justify-content:center}
 .score .x{color:var(--board-muted);font-size:.6em}
 .clockrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;border-top:1px solid rgba(255,255,255,.14);padding-top:8px}
-.clock{font:700 34px/1 var(--f-num);font-variant-numeric:tabular-nums;min-width:3.2em;text-align:center}
+.clock{font:700 34px/1 var(--f-num);font-variant-numeric:tabular-nums;min-width:3.2em;text-align:center;background:none;border:0;color:inherit;padding:0;cursor:pointer}
+.board .chip.clkbtn{border:1px dashed rgba(255,255,255,.45);background:transparent;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+.clockadj{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--token);border-radius:12px;padding:10px 12px}
+.clockadj b{flex:1 1 100%;font-size:14px}
+.clockadj input[type=text]{width:6.5em;font:700 20px var(--f-num);text-align:center;font-variant-numeric:tabular-nums}
+.clockadj .pct{flex:1 1 100%}
 .chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .board .chip{background:rgba(255,255,255,.12);color:var(--board-ink)}
 .board .chip.warn,.chip.warn{background:var(--warn);color:#1d1600}
@@ -294,7 +299,7 @@ function doOppGoal(g,t){
 }
 function isOn(g,pid,t){ return (g.stints[pid]||[]).some(([i,o])=>i<=t&&(o===null||o>t)); }
 function onAt(g,t){ return Object.keys(g.stints).filter(id=>isOn(g,id,t)); }
-function minutes(g,pid,t){ return (g.stints[pid]||[]).reduce((a,[i,o])=>a+((o??t)-i),0); }
+function minutes(g,pid,t){ return (g.stints[pid]||[]).reduce((a,[i,o])=>a+Math.max(0,(o??t)-i),0); }
 const countType = (g,type,p) => g.events.filter(e=>e.type===type&&e.period===p).length;
 
 function newGame(o){
@@ -554,6 +559,12 @@ function stopClock(g,at){
   g.clock.elapsed=t; g.clock.since=null;
   if(seg&&seg.r1===null) seg.r1=seg.r0+(t-seg.g0)*1000;
 }
+function setClockRemaining(g,rem){
+  rem=Math.max(0,Math.min(PERIOD,Math.round(rem)));
+  const nt=g.period*PERIOD-rem, running=!!g.clock.since;
+  if(running){ stopClock(g); g.clock.elapsed=nt; startClock(g); } else g.clock.elapsed=nt;
+  touchGame(g); render();
+}
 function gameTimeAtReal(g,r){
   for(const s of g.clock.log){ const end=s.r1??Date.now(); if(r>=s.r0&&r<=end) return s.g0+(r-s.r0)/1000; }
   return null;
@@ -779,8 +790,13 @@ function viewGame(g){
     <div class="team"><b>${esc(clubName())}</b><span class="chip${fus>=5?' warn':''}" id="foulsUs">Faltas ${fus}</span><span class="tt">TT <i class="${ttUs?'used':''}"></i></span></div>
     <div class="score"><span>${g.score.us}</span><span class="x">×</span><span>${g.score.them}</span></div>
     <div class="team r"><b class="opp">${esc(g.opp)}</b><span class="chip${fadv>=5?' warn':''}">Faltas ${fadv}</span><span class="tt">TT <i class="${ttAdv?'used':''}"></i></span></div>
-    <div class="clockrow"><span class="chip" id="period"></span><span class="clock" id="clock"></span>${fus>=5?'<span class="chip warn">Próxima falta nossa: tiro livre sem barreira</span>':''}${fadv>=5?'<span class="chip warn">Próxima falta deles: tiro livre sem barreira</span>':''}</div>
+    <div class="clockrow"><span class="chip" id="period"></span><button class="clock" id="clock" data-act="clk-open" aria-label="Acertar o relógio"></button>${g.status!=='final'?'<button class="chip clkbtn" data-act="clk-open">Acertar relógio</button>':''}${fus>=5?'<span class="chip warn">Próxima falta nossa: tiro livre sem barreira</span>':''}${fadv>=5?'<span class="chip warn">Próxima falta deles: tiro livre sem barreira</span>':''}</div>
   </div>
+  ${UI.clockAdj&&g.status!=='final'?`<div class="clockadj"><b>Acertar o relógio do ${g.period}º tempo</b>
+    <button class="btn small" data-act="clk" data-v="60">+1 min</button><button class="btn small" data-act="clk" data-v="10">+10s</button><button class="btn small" data-act="clk" data-v="1">+1s</button>
+    <button class="btn small" data-act="clk" data-v="-1">−1s</button><button class="btn small" data-act="clk" data-v="-10">−10s</button><button class="btn small" data-act="clk" data-v="-60">−1 min</button>
+    <span class="spacer"></span><input type="text" id="clk-set" inputmode="numeric" placeholder="mm:ss" value="${fmt(g.period*PERIOD-t)}" aria-label="Tempo restante"><button class="btn primary" data-act="clk-set">Acertar</button><button class="btn" data-act="clk-close">Fechar</button>
+    <span class="pct">Use o placar do ginásio como referência: digite o tempo que ele mostra, ou ajuste com os botões. Funciona com o cronômetro parado ou rodando. Se esqueceu de dar Retomar, ligue o cronômetro e acerte o tempo aqui.</span></div>`:''}
   <div class="row">${g.status==='final'?'':`<button class="btn primary" id="playBtn" data-act="play"></button>
     <button class="btn" data-act="oppgoal">Gol adversário</button><button class="btn" data-act="oppfoul">Falta adversário</button>
     <button class="btn" data-act="tt" data-v="tt_us">Tempo técnico</button><button class="btn" data-act="tt" data-v="tt_adv">Tempo adv.</button>`}
@@ -1095,8 +1111,8 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden&&drag) end
 
 /* ---------- actions ---------- */
 const ACT={
-  go:d=>{ resetInteractions(); UI.view=d.v; UI.confirm=null; UI.edit=null; render(); scrollTo(0,0); },
-  'open-game':d=>{ resetInteractions(); UI.view='game'; UI.gameId=d.id; UI.confirm=null; if(!['quadra','stats','minutagem','mapa','lances','fisico'].includes(UI.tab)) UI.tab='quadra'; render(); scrollTo(0,0); },
+  go:d=>{ resetInteractions(); UI.clockAdj=false; UI.view=d.v; UI.confirm=null; UI.edit=null; render(); scrollTo(0,0); },
+  'open-game':d=>{ resetInteractions(); UI.clockAdj=false; UI.view='game'; UI.gameId=d.id; UI.confirm=null; if(!['quadra','stats','minutagem','mapa','lances','fisico'].includes(UI.tab)) UI.tab='quadra'; render(); scrollTo(0,0); },
   'new-game':()=>{ resetInteractions(); ensureClub(); UI.setup={opp:'',comp:'',date:todayISO(),venue:'Casa',squad:S.club.players.filter(p=>p.active).sort(sortP).slice(0,14).map(p=>p.id),starters:[]}; UI.view='setup'; render(); },
   venue:d=>{ UI.setup.venue=d.v; render(); },
   sq:d=>{ const s=UI.setup; if(s.squad.includes(d.id)){ s.squad=s.squad.filter(x=>x!==d.id); s.starters=s.starters.filter(x=>x!==d.id); } else s.squad.push(d.id); render(); },
@@ -1139,6 +1155,12 @@ const ACT={
   delev:d=>{ const g=cur(); const id=+d.id; const e=g.events.find(x=>x.id===id); if(!e) return;
     mutate(g,()=>{ if(e.type==='gol') g.score.us=Math.max(0,g.score.us-1); if(e.type==='gol_adv') g.score.them=Math.max(0,g.score.them-1); g.events=g.events.filter(x=>x.id!==id); }); toast('Lance apagado'); },
   'exp-min':()=>exportMinutagem(cur()),
+  'clk-open':()=>{ const g=cur(); if(!g||g.status==='final') return; UI.clockAdj=!UI.clockAdj; render(); },
+  'clk-close':()=>{ UI.clockAdj=false; render(); },
+  clk:d=>{ const g=cur(); setClockRemaining(g,(g.period*PERIOD-gnow(g))+(+d.v)); },
+  'clk-set':()=>{ const g=cur(); const v=String(($('#clk-set')||{}).value||'').trim(); const m=v.match(/^(\d{1,2})(?:[:.,h ]?(\d{2}))?$/);
+    if(!m){ toast('Digite o tempo como 12:34'); return; } const s=m[2]!==undefined?(+m[1])*60+(+m[2]):(+m[1])*60;
+    if(s>PERIOD){ toast('O tempo vai de 20:00 a 0:00'); return; } setClockRemaining(g,s); toast('Relógio acertado para '+fmt(s)); },
   'save-staff':()=>{ ensureClub(); const v=($('#staff-prep')||{}).value; S.club.preparador=String(v??'').trim(); touchClub(); render(); toast('Comissão técnica salva'); },
   'exp-csv':()=>exportStats(cur()), 'exp-log':()=>exportLog(cur()), 'exp-pdf':()=>exportPDF(cur()),
   'exp-season':()=>{ const {st,players}=seasonData(); const head=['Nº','Atleta','Posição','Jogos','Minutos','Gols','Assistências','Participações','GF em quadra','GS em quadra','Saldo','Finalizações','No alvo','Passes certos','Passes errados','Desarmes','Faltas cometidas','Faltas sofridas','Defesas','Amarelos','Vermelhos'];
@@ -1176,7 +1198,7 @@ function tick(){
   document.querySelectorAll('[data-hrtok]').forEach(el=>{ const pid=el.dataset.hrtok; el.style.boxShadow=BT.live[pid]?tokenStyle(g,pid).replace('box-shadow:','').replace(';',''):''; });
   if(Date.now()-lastSec>1000){ lastSec=Date.now();
     if(g.clock.since) document.querySelectorAll('[data-min]').forEach(el=>{ if(!g.expelled[el.dataset.min]) el.textContent=fmt(minutes(g,el.dataset.min,t)); });
-    if(g.clock.since&&UI.tab==='stats'&&!drag&&!menuCtx&&Date.now()%4000<1100) render();
+    if(g.clock.since&&UI.tab==='stats'&&!drag&&!menuCtx&&Date.now()%4000<1100) softRender();
   }
   if(BT.dirty&&Date.now()-lastHRSave>10000){ BT.dirty=false; lastHRSave=Date.now(); touchGame(g); }
 }
@@ -1184,7 +1206,7 @@ function tick(){
 /* ---------- boot ---------- */
 loadLocal();
 if(!S.club&&!Object.keys(S.games).length&&!(window.claude&&window.claude.use)){ const g=sampleGame(sampleClub()); S.games[g.id]=g; S.club=realClub(); saveLocal(); }
-else if(S.club&&S.club.example){ S.club=realClub(S.club); saveLocal(); }
+else if(S.club&&!S.club.players.some(p=>/^cm\d+$/.test(p.id))&&(S.club.example||S.club.players.every(p=>/^p\d+$/.test(p.id)))){ S.club=realClub(S.club); saveLocal(); if(window.claude&&window.claude.use) setTimeout(()=>queueWrite('clube/principal'),12000); }
 render();
 setInterval(tick,250);
 initSync();
