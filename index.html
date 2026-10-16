@@ -44,6 +44,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .sync[data-s="error"]::before,.sync[data-s="readonly"]::before{background:var(--bad)}
 
 .gamebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--bg);padding-block:6px}
+.btn.half2{border-color:var(--ink);font-weight:700}
 .btn.back{background:var(--board);color:var(--board-ink);border-color:var(--board);order:-1}
 .gtitle{display:flex;flex-direction:column;min-width:0;flex:1 1 200px}
 .gtitle b{font:700 20px/1.1 var(--f-num);text-transform:uppercase;letter-spacing:.02em}
@@ -799,9 +800,10 @@ function viewGame(g){
     <span class="pct">Use o placar do ginásio como referência: digite o tempo que ele mostra, ou ajuste com os botões. Funciona com o cronômetro parado ou rodando. Se esqueceu de dar Retomar, ligue o cronômetro e acerte o tempo aqui.</span></div>`:''}
   <div class="row">${g.status==='final'?'':`<button class="btn primary" id="playBtn" data-act="play"></button>
     <button class="btn" data-act="oppgoal">Gol adversário</button><button class="btn" data-act="oppfoul">Falta adversário</button>
-    <button class="btn" data-act="tt" data-v="tt_us">Tempo técnico</button><button class="btn" data-act="tt" data-v="tt_adv">Tempo adv.</button>`}
+    <button class="btn" data-act="tt" data-v="tt_us">Tempo técnico</button><button class="btn" data-act="tt" data-v="tt_adv">Tempo adv.</button>${g.period===1?'<button class="btn half2" data-act="half2">Ir para o 2º tempo →</button>':''}`}
     <button class="btn" data-act="undo" ${(undoStacks[g.id]||[]).length?'':'disabled'}>Desfazer</button>
     <span class="spacer"></span>${g.status!=='final'?'<button class="btn" data-act="end-game">Encerrar jogo</button>':''}<button class="btn danger" data-act="del-game">Apagar</button></div>`;
+  h+=confirmBox('half2',`Ir para o 2º tempo? O 1º tempo fecha em 0:00 (relógio atual: ${fmt(PERIOD-t)}) e o relógio vai para 20:00 do 2º tempo, parado. Quem está em quadra continua em quadra.`,'Ir para o 2º tempo');
   h+=confirmBox('end-game','Encerrar o jogo? O cronômetro para e os minutos de cada atleta ficam fechados.','Encerrar');
   h+=confirmBox('del-game','Apagar este jogo e todos os lances dele? Isso não tem volta.','Apagar jogo');
   h+=`<div class="tabs" role="tablist">${tabs.map(([v,l])=>`<button class="tab" role="tab" data-act="tab" data-v="${v}" aria-selected="${UI.tab===v}">${l}</button>`).join('')}</div>`;
@@ -1028,7 +1030,7 @@ function renderClock(g){
   const over=g.clock.elapsed>=2*PERIOD&&!g.clock.since, half=!g.clock.since&&g.clock.elapsed>=PERIOD&&g.period===1;
   $('#period').textContent=over||g.status==='final'?'Fim de jogo':half?'Intervalo':`${g.period}º tempo`;
   const b=$('#playBtn');
-  if(b){ b.textContent=g.clock.since?'Pausar':(over||g.status==='final')?'Encerrado':g.clock.elapsed===0?'Iniciar':half?'Iniciar 2º tempo':'Retomar'; b.disabled=!g.clock.since&&(over||g.status==='final'); }
+  if(b){ b.textContent=g.clock.since?'Pausar':(over||g.status==='final')?'Encerrado':g.clock.elapsed===0?'Iniciar':(half||(g.period===2&&g.clock.elapsed===PERIOD))?'Iniciar 2º tempo':'Retomar'; b.disabled=!g.clock.since&&(over||g.status==='final'); }
   document.querySelectorAll('[data-red]').forEach(x=>{ const s=g.slots[+x.dataset.red]; if(s&&s.red) x.textContent=fmt(s.red.until-t); });
 }
 
@@ -1135,6 +1137,7 @@ const ACT={
   'confirm-yes':()=>{ const c=UI.confirm; UI.confirm=null; const g=cur();
     if(c.kind==='del-player'){ S.club.players=S.club.players.filter(p=>p.id!==c.id); UI.edit=null; touchClub(); }
     else if(c.kind==='clear-example'){ S.club.players=S.club.players.filter(p=>!/^p\d+$/.test(p.id)); S.club.example=false; touchClub(); }
+    else if(c.kind==='half2'&&g){ mutate(g,()=>{ stopClock(g); g.clock.elapsed=PERIOD; g.period=2; },{undo:false}); toast('2º tempo pronto. Toque em Iniciar 2º tempo quando a bola rolar.'); return; }
     else if(c.kind==='end-game'&&g){ mutate(g,()=>{ stopClock(g); const t=gnow(g); lineup(g).forEach(id=>closeStint(g,id,t)); g.status='final'; UI.tab='stats'; },{undo:false}); scrollTo(0,0); toast('Jogo encerrado'); return; }
     else if(c.kind==='del-game'&&g){ delete S.games[g.id]; saveLocal(); if(SY.db&&!SY.readonly){ SY.pending.add('jogos/'+g.id); SY.ver['jogos/'+g.id]=(SY.ver['jogos/'+g.id]||0)+1; flush('jogos/'+g.id); } UI.view='home'; toast('Jogo apagado'); }
     render(); },
@@ -1148,6 +1151,7 @@ const ACT={
     mutate(g,()=>{ stopClock(g); push(g,{t:Math.round(gnow(g)),type:d.v}); }); toast('Tempo técnico · cronômetro pausado'); },
   undo:()=>{ const g=cur(); g&&doUndo(g); },
   'end-game':()=>{ UI.confirm={kind:'end-game'}; render(); },
+  half2:()=>{ UI.confirm={kind:'half2'}; UI.clockAdj=false; render(); scrollTo(0,0); },
   'del-game':()=>{ UI.confirm={kind:'del-game'}; render(); },
   reopen:()=>{ const g=cur(); mutate(g,()=>{ g.status='live'; const t=gnow(g); lineup(g).forEach(id=>{ const s=g.stints[id]; if(s&&s.length&&s[s.length-1][1]===t) s[s.length-1][1]=null; }); },{undo:false}); },
   tab:d=>{ UI.tab=d.v; render(); },
